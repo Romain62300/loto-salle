@@ -284,22 +284,67 @@ function playBallSound(){
   if(!soundToggle.checked)return;
   try{
     const ctx=getAudioCtx();
-    // Bruit bref façon boule qui tombe dans un bac
-    const buf=ctx.createBuffer(1,ctx.sampleRate*0.15,ctx.sampleRate);
+    const now=ctx.currentTime;
+    const sr=ctx.sampleRate;
+    const dur=0.5;
+    const buf=ctx.createBuffer(1,Math.ceil(sr*dur),sr);
     const data=buf.getChannelData(0);
+
+    // Rebonds successifs : chaque entrée = {délai, amplitude, fréq de base, déclin}
+    const bounces=[
+      {t:0.000, amp:1.00, freq:580, decay:38},
+      {t:0.090, amp:0.48, freq:530, decay:44},
+      {t:0.165, amp:0.22, freq:490, decay:52},
+      {t:0.225, amp:0.09, freq:450, decay:60},
+    ];
+
     for(let i=0;i<data.length;i++){
-      const t=i/ctx.sampleRate;
-      // Mélange bruit blanc + tonalité grave décroissante
-      data[i]=(Math.random()*2-1)*Math.exp(-t*30)*0.6
-              +Math.sin(2*Math.PI*120*t)*Math.exp(-t*20)*0.4;
+      const t=i/sr;
+      let s=0;
+      for(const b of bounces){
+        if(t<b.t)continue;
+        const dt=t-b.t;
+        const env=b.amp*Math.exp(-dt*b.decay);
+        // Transient haute fréquence (clic d'impact plastique)
+        if(dt<0.004)s+=(Math.random()*2-1)*env*1.2;
+        // Corps de la boule : fréquence glissante vers le bas
+        const f=b.freq*Math.exp(-dt*6);
+        s+=Math.sin(2*Math.PI*f*dt)*env*0.55;
+        // Première harmonique, plus douce
+        s+=Math.sin(2*Math.PI*f*2*dt)*env*0.20;
+        // Bruit de frottement résiduel
+        s+=(Math.random()*2-1)*env*0.25;
+      }
+      data[i]=Math.max(-1,Math.min(1,s));
     }
+
     const src=ctx.createBufferSource();
     src.buffer=buf;
-    const gain=ctx.createGain();
-    gain.gain.setValueAtTime(0.7,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.15);
-    src.connect(gain);gain.connect(ctx.destination);
-    src.start();
+
+    // Filtre passe-bande : timbre creux du plastique
+    const bp=ctx.createBiquadFilter();
+    bp.type='bandpass';
+    bp.frequency.value=520;
+    bp.Q.value=1.4;
+
+    // Légère réverbération via un délai court
+    const delay=ctx.createDelay(0.04);
+    delay.delayTime.value=0.018;
+    const delayGain=ctx.createGain();
+    delayGain.gain.value=0.18;
+
+    const master=ctx.createGain();
+    master.gain.setValueAtTime(0.85,now);
+    master.gain.exponentialRampToValueAtTime(0.001,now+dur);
+
+    src.connect(bp);
+    bp.connect(master);
+    // Chemin délai en parallèle
+    bp.connect(delay);
+    delay.connect(delayGain);
+    delayGain.connect(master);
+    master.connect(ctx.destination);
+    src.start(now);
   }catch(e){}
 }
  
