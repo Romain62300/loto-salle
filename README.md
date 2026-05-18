@@ -95,6 +95,7 @@ loto-salle/
 └── loto.html      # Application complète (HTML + CSS + JS)
 └── README.md      # Documentation
 └── LICENSE        # Licence MIT
+└── .gitignore     # Fichiers exclus du dépôt
 ```
 
 ---
